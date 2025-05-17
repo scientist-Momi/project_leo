@@ -5,7 +5,7 @@ from picamera2 import Picamera2
 import time
 
 # Change this to the name of the person you're photographing
-PERSON_NAME = "jaryd"  
+PERSON_NAME = "josh"  
 
 def create_folder(name):
     dataset_folder = "dataset"
@@ -22,7 +22,7 @@ def capture_photos(name):
     
     # Initialize the camera
     picam2 = Picamera2()
-    picam2.configure(picam2.create_preview_configuration(main={"format": 'XRGB8888', "size": (640, 480)}))
+    picam2.configure(picam2.create_preview_configuration(main={"format": 'XRGB8888', "size": (1280, 960)}))
     picam2.start()
 
     # Allow camera to warm up

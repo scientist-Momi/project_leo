@@ -34,9 +34,10 @@ def init_db():
 
 init_db()
 
-# Initialize the camera (global variable)
+# Initialize the camera and face detection state
 camera = None
 captured_images = []
+face_detected = False
 
 def initialize_camera():
     global camera
@@ -49,16 +50,12 @@ def initialize_camera():
             time.sleep(2)  # Allow camera to warm up
             print("Camera initialized successfully")
             return True
-        # elif not camera.is_opened():
-        #     print("Camera is closed, reinitializing...")
-        #     camera = None
-        #     return initialize_camera()
         else:
             print("Camera already initialized")
             return True
     except Exception as e:
         print(f"Failed to initialize camera: {e}")
-        camera = None  # Reset camera on failure
+        camera = None
         return False
 
 def close_camera():
@@ -74,8 +71,7 @@ def close_camera():
         camera = None
 
 def generate_frames():
-    global camera
-    # Ensure camera is initialized
+    global camera, face_detected
     if not initialize_camera():
         print("Camera initialization failed, sending placeholder image")
         placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -100,12 +96,20 @@ def generate_frames():
                 close_camera()
                 continue
 
-            # Convert to JPEG
+            # Convert to RGB for face detection
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            pil_img = Image.fromarray(frame_rgb)
-            buf = io.BytesIO()
-            pil_img.save(buf, format="JPEG")
-            frame_bytes = buf.getvalue()
+            
+            # Detect faces
+            face_locations = face_recognition.face_locations(frame_rgb)
+            face_detected = len(face_locations) > 0
+
+            # Draw bounding boxes around detected faces
+            for (top, right, bottom, left) in face_locations:
+                cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+
+            # Convert to JPEG
+            _, buffer = cv2.imencode('.jpg', frame)
+            frame_bytes = buffer.tobytes()
 
             # Yield frame in MJPEG format
             yield (b'--frame\r\n'
@@ -120,6 +124,11 @@ def video_feed():
     return Response(generate_frames(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
+@app.route("/check_face", methods=["GET"])
+def check_face():
+    global face_detected
+    return jsonify({"face_detected": face_detected})
+
 @app.route("/open_camera", methods=["GET"])
 def open_camera():
     global camera
@@ -133,9 +142,12 @@ def open_camera():
 
 @app.route("/capture_single_image", methods=["GET"])
 def capture_single_image():
-    global camera, captured_images
+    global camera, captured_images, face_detected
     if not initialize_camera():
         return jsonify({"status": "error", "message": "Camera not opened"})
+
+    if not face_detected:
+        return jsonify({"status": "error", "message": "No face detected"})
 
     try:
         # Capture a single frame
@@ -195,7 +207,7 @@ def train_and_store():
         return jsonify({"status": "success", "message": "Criminal data stored and model trained"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
-    
+
 @app.route("/")
 def index():
     return app.send_static_file("index.html")

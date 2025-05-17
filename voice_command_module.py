@@ -20,7 +20,8 @@ class VoiceCommandModule:
             return None
 
     def _listen_thread(self):
-        with self.microphone as source:
+        # with self.microphone as source:
+        with sr.Microphone(sample_rate=16000) as source:
             self.recognizer.adjust_for_ambient_noise(source)
             print("Listening for command...")
             try:
