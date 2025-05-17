@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LEO Criminal Registration</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #videoFeed {
+            display: none;
+            margin: 20px auto;
+            border: 2px solid #000;
+        }
+        #criminalForm {
+            display: none;
+            margin-top: 20px;
+        }
+        #criminalForm input, #criminalForm textarea {
+            display: block;
+            margin: 10px auto;
+            padding: 8px;
+            width: 300px;
+        }
+        #status {
+            margin-top: 20px;
+            font-weight: bold;
+        }
+        #imageCounter {
+            margin-top: 10px;
+            font-size: 16px;
+        }
+        #faceStatus {
+            margin-top: 10px;
+            font-size: 16px;
+            color: red;
+        }
+        #faceStatus.detected {
+            color: green;
+        }
+    </style>
+</head>
+<body>
+    <h1>LEO Criminal Registration</h1>
+    <button id="openCameraBtn">Open Camera</button>
+    <button id="captureImageBtn" disabled>Capture Image</button>
+    <div id="imageCounter">Images captured: 0/3</div>
+    <div id="faceStatus">No face detected</div>
+    <img id="videoFeed" alt="Camera Feed" width="640" height="480">
+    <div id="criminalForm">
+        <h2>Enter Criminal Details</h2>
+        <input type="text" id="name" placeholder="Name" required>
+        <input type="number" id="age" placeholder="Age" required>
+        <textarea id="description" placeholder="Description" required></textarea>
+        <input type="text" id="crime" placeholder="Crime Committed" required>
+        <button id="submitBtn">Submit and Train Model</button>
+    </div>
+    <div id="status"></div>
+
+    <script>
+        let imagePaths = [];
+        let imagesCaptured = 0;
+        const videoFeed = document.getElementById("videoFeed");
+        const imageCounter = document.getElementById("imageCounter");
+        const faceStatus = document.getElementById("faceStatus");
+        const captureImageBtn = document.getElementById("captureImageBtn");
+
+        // Open Camera
+        document.getElementById("openCameraBtn").addEventListener("click", async () => {
+            const statusDiv = document.getElementById("status");
+            statusDiv.textContent = "Opening camera...";
+            try {
+                const response = await fetch("/open_camera");
+                const result = await response.json();
+                if (result.status === "success") {
+                    statusDiv.textContent = "Camera opened successfully";
+                    videoFeed.src = "/video_feed";
+                    videoFeed.style.display = "block";
+                    startFaceDetectionCheck();
+                } else {
+                    statusDiv.textContent = "Error: " + result.message;
+                }
+            } catch (error) {
+                statusDiv.textContent = "Error: " + error.message;
+            }
+        });
+
+        // Periodically check if a face is detected
+        function startFaceDetectionCheck() {
+            setInterval(async () => {
+                try {
+                    const response = await fetch("/check_face");
+                    const result = await response.json();
+                    if (result.face_detected) {
+                        faceStatus.textContent = "Face detected";
+                        faceStatus.classList.add("detected");
+                        captureImageBtn.disabled = false;
+                    } else {
+                        faceStatus.textContent = "No face detected";
+                        faceStatus.classList.remove("detected");
+                        captureImageBtn.disabled = true;
+                    }
+                } catch (error) {
+                    console.error("Error checking face detection:", error);
+                }
+            }, 1000); // Check every second
+        }
+
+        // Capture Single Image
+        document.getElementById("captureImageBtn").addEventListener("click", async () => {
+            const statusDiv = document.getElementById("status");
+            if (imagesCaptured >= 3) {
+                statusDiv.textContent = "Already captured 3 images";
+                return;
+            }
+
+            statusDiv.textContent = "Capturing image...";
+            try {
+                const response = await fetch("/capture_single_image");
+                const result = await response.json();
+                if (result.status === "success") {
+                    imagePaths.push(result.image_path);
+                    imagesCaptured = result.images_captured;
+                    imageCounter.textContent = `Images captured: ${imagesCaptured}/3`;
+                    statusDiv.textContent = `Image ${imagesCaptured} captured successfully`;
+
+                    if (imagesCaptured === 3) {
+                        document.getElementById("captureImageBtn").disabled = true;
+                        document.getElementById("criminalForm").style.display = "block";
+                    }
+                } else {
+                    statusDiv.textContent = "Error: " + result.message;
+                }
+            } catch (error) {
+                statusDiv.textContent = "Error: " + error.message;
+            }
+        });
+
+        // Submit Form and Train Model
+        document.getElementById("submitBtn").addEventListener("click", async () => {
+            const statusDiv = document.getElementById("status");
+            const name = document.getElementById("name").value;
+            const age = document.getElementById("age").value;
+            const description = document.getElementById("description").value;
+            const crime = document.getElementById("crime").value;
+
+            if (!name || !age || !description || !crime) {
+                statusDiv.textContent = "Please fill out all fields";
+                return;
+            }
+
+            statusDiv.textContent = "Training model and storing data...";
+            const formData = new FormData();
+            formData.append("name", name);
+            formData.append("age", age);
+            formData.append("description", description);
+            formData.append("crime", crime);
+            imagePaths.forEach(path => formData.append("image_paths[]", path));
+
+            try {
+                const response = await fetch("/train_and_store", {
+                    method: "POST",
+                    body: formData
+                });
+                const result = await response.json();
+                if (result.status === "success") {
+                    statusDiv.textContent = "Criminal data stored and model trained successfully";
+                    document.getElementById("criminalForm").style.display = "none";
+                    videoFeed.src = "";
+                    videoFeed.style.display = "none";
+                    imagePaths = [];
+                    imagesCaptured = 0;
+                    imageCounter.textContent = "Images captured: 0/3";
+                    faceStatus.textContent = "No face detected";
+                    faceStatus.classList.remove("detected");
+                    captureImageBtn.disabled = true;
+                } else {
+                    statusDiv.textContent = "Error: " + result.message;
+                }
+            } catch (error) {
+                statusDiv.textContent = "Error: " + error.message;
+            }
+        });
+    </script>
+</body>
+</html>

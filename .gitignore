@@ -1,0 +1,41 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+captured_images/
+*.py[cod]
+*.so
+
+# Python & general ignores
+*.pyc
+*.pyo
+.env
+*.log
+node_modules/
+*.zip
+*.tar.gz
+.DS_Store
+
+# Virtual environment
+venv/
+.env/
+.envrc
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# IDE/editor configs
+.vscode/
+.idea/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Secrets
+*.env
+
+*.db
