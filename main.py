@@ -9,23 +9,17 @@ class LEOSystem:
         self.voice_command = VoiceCommandModule()
         self.output = OutputModule()
         self.face_recognizer = FacialRecognitionModule()
-        self.camera = CameraModule(face_recognizer=self.face_recognizer, output=self.output)
         self.scanning = False
 
-    def toggle_scan(self, enable):
-        self.scanning = enable
-        self.camera.face_recognizer = self.face_recognizer if enable else None
-        if enable:
-            self.camera.start()
-            status = "Starting face scan..."
-        else:
-            self.camera.stop()
-            status = "Stopping face scan."
-        self.output.speak(status)
+    def run_scan(self):
+        self.output.speak("Starting face scan...")
+        self.face_recognizer.run()
+        self.output.speak("Face scan ended.")
 
     def run(self):
         self.output.speak("LEO is starting up")
         self.output.speak("LEO is ready")
+
         while True:
             command = self.voice_command.listen_for_command()
             if command is None:
@@ -37,15 +31,12 @@ class LEOSystem:
             print(f"Processing command: {command}")
             if command == "QUIT":
                 self.output.speak("Shutting down LEO")
-                if self.scanning:
-                    self.camera.stop()
                 break
             elif command == "SCAN":
                 if not self.scanning:
-                    self.toggle_scan(True)
-            elif command == "STOP SCAN":
-                if self.scanning:
-                    self.toggle_scan(False)
+                    self.scanning = True
+                    self.run_scan()
+                    self.scanning = False
             else:
                 self.output.speak("Unknown command")
 
