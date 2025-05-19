@@ -4,14 +4,18 @@ import pytesseract
 from picamera2 import Picamera2
 import time
 import sqlite3
+from PIL import Image, ImageTk
+import tkinter as tk
 
 class BasicLicensePlateRecognition:
-    def __init__(self, piCamera, resolution=(1280, 960), format='RGB888'):
+    def __init__(self, piCamera):
         self.picam2 = piCamera
-        # config = self.picam2.create_preview_configuration(main={"format": format, "size": resolution})
-        # self.picam2.configure(config)
         self.window_name = "License Plate Recognition"
         self.running = False
+        self.matched_vehicle_info = None
+        self.root = None
+        self.current_gui = None 
+        self.camera_started = False
 
     def preprocess_frame(self, frame):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -49,35 +53,75 @@ class BasicLicensePlateRecognition:
                 vehicle_info = self.get_vehicle_info(plate_number)
                 if vehicle_info:
                     print(f"[MATCHED VEHICLE] {vehicle_info}")
-                    # self.running = False
-                    # cv2.destroyAllWindows()
-                    # self.show_vehicle_info_gui(vehicle_info)
-                else:
-                    print(f"[INFO] Plate '{plate_number}' not found in database.")
-
+                    self.matched_vehicle_info = vehicle_info
+                    self.running = False  
+                    cv2.destroyAllWindows() 
+                    self.show_vehicle_info_gui(vehicle_info)
+                    return True 
+        return False 
 
 
     def start(self):
-        self.picam2.start()
-        time.sleep(2)
-        self.running = True
-        print("[INFO] Starting camera feed...")
+        # Initialize Tkinter root if not already done
+        if self.root is None:
+            self.root = tk.Tk()
+            self.root.withdraw()  # Hide the root window
 
+        # Set up the OpenCV window
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        win_width = 1280
+        win_height = 720
+        win_x = (screen_width - win_width) // 2
+        win_y = (screen_height - win_height) // 2
+
+        cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(self.window_name, win_width, win_height)
+        cv2.moveWindow(self.window_name, win_x, win_y)
+
+        # Start the camera
+        self.running = True
+        if not self.camera_started:
+            print("[INFO] Starting camera feed...")
+            self.picam2.start()
+            time.sleep(2)
+            self.camera_started = True
+
+        # Main loop for capturing frames
         while self.running:
             frame = self.picam2.capture_array()
             edges, _ = self.preprocess_frame(frame)
             candidates = self.find_plate_candidates(edges)
-            self.recognize_plate_text(frame, candidates)
+            match_found = self.recognize_plate_text(frame, candidates)
+
+            if match_found:
+                break  # Immediately exit loop
 
             cv2.imshow(self.window_name, frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 self.stop()
+                break
 
-    def stop(self):
+            if self.root:
+                self.root.update()
+
+    def stop_camera_and_windows(self):
         print("[INFO] Stopping camera feed...")
         self.running = False
-        self.picam2.stop()
+        if self.camera_started:
+            self.picam2.stop()
+            self.camera_started = False
         cv2.destroyAllWindows()
+
+    def stop(self):
+        self.stop_camera_and_windows()
+        # Close any open GUI windows and quit Tkinter
+        if self.current_gui:
+            self.current_gui.destroy()
+            self.current_gui = None
+        if self.root:
+            self.root.destroy()
+            self.root = None
 
 
     def get_vehicle_info(self, plate_number):
@@ -96,6 +140,35 @@ class BasicLicensePlateRecognition:
                 "status": result[5]
             }
         return None
+    
+    def show_vehicle_info_gui(self, vehicle_info):
+        if self.root is None:
+            self.root = tk.Tk()
+            self.root.withdraw()
+
+        win = tk.Toplevel(self.root)
+        win.title("Vehicle Info Match")
+        win.geometry("350x300")
+
+        self.current_gui = win  # So it can be destroyed on stop()
+
+        info = f"""
+        Plate Number: {vehicle_info['plate_number']}
+        Owner: {vehicle_info['owner']}
+        Make: {vehicle_info['make']}
+        Model: {vehicle_info['model']}
+        Status: {vehicle_info['status']}
+        """
+
+        label = tk.Label(win, text=info.strip(), justify='left', font=('Arial', 12))
+        label.pack(padx=20, pady=20)
+
+        tk.Button(win, text="Close", command=win.destroy).pack(pady=10)
+
+        # Ensure the GUI becomes visible
+        win.update_idletasks()
+        win.lift()
+        win.focus_force()
 
 if __name__ == "__main__":
     recognizer = BasicLicensePlateRecognition()

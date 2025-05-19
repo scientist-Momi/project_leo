@@ -5,6 +5,7 @@ import numpy as np
 from picamera2 import Picamera2
 import time
 import pickle
+import tkinter as tk
 
 class FacialRecognitionModule:
     def __init__(self, piCamera, encodings_path="encodings.pickle", cv_scaler=4):
@@ -15,6 +16,13 @@ class FacialRecognitionModule:
         self.frame_count = 0
         self.start_time = time.time()
         self.fps = 0
+        self.match_found = False
+        self.running = False
+        self.matched_person_info = None
+        self.root = None
+        self.current_gui = None
+        self.camera_started = False
+
 
         print("[INFO] Loading encodings...")
         with open(encodings_path, "rb") as f:
@@ -41,6 +49,7 @@ class FacialRecognitionModule:
         self.face_locations = face_recognition.face_locations(rgb_resized_frame)
         self.face_encodings = face_recognition.face_encodings(rgb_resized_frame, self.face_locations, model='large')
         self.face_ids = []
+        self.match_found = False
 
         for face_encoding in self.face_encodings:
             matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding)
@@ -55,6 +64,15 @@ class FacialRecognitionModule:
                 person_info = self.get_person_info(criminal_id)
                 if person_info:
                     print(f"[MATCH] Found: {person_info}")
+                    self.matched_person_info = person_info
+                    self.running = False
+                    self.match_found = True
+                    # Show GUI with match
+                    cv2.destroyAllWindows()
+                    self.show_match_gui(person_info)
+                    
+                    
+                    break 
                 else:
                     print(f"[INFO] ID matched but no record in DB for {criminal_id}")
             else:
@@ -75,9 +93,37 @@ class FacialRecognitionModule:
         return frame
 
     def run(self):
-        while True:
+        if self.root is None:
+            self.root = tk.Tk()
+            self.root.withdraw()
+
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+
+        win_width = 1280
+        win_height = 720
+
+        win_x = (screen_width - win_width) // 2
+        win_y = (screen_height - win_height) // 2
+
+        cv2.namedWindow("Video", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("Video", win_width, win_height)
+        cv2.moveWindow("Video", win_x, win_y)
+
+        self.running = True
+        if not self.camera_started:
+            print("[INFO] Starting camera feed...")
+            self.picam2.start()
+            time.sleep(2)
+            self.camera_started = True
+
+        while self.running:
             frame = self.picam2.capture_array()
             processed_frame = self._process_frame(frame)
+
+            if self.match_found:  
+                break
+
             display_frame = self._draw_results(processed_frame)
             current_fps = self._calculate_fps()
             cv2.putText(display_frame, f"FPS: {current_fps:.1f}", (display_frame.shape[1] - 150, 30),
@@ -87,8 +133,29 @@ class FacialRecognitionModule:
             if cv2.waitKey(1) == ord("q"):
                 break
 
+            if self.root:
+                self.root.update()
+
+        # cv2.destroyAllWindows()
+        # self.picam2.stop()
+
+    def stop_camera_and_windows(self):
+        print("[INFO] Stopping camera feed...")
+        self.running = False
+        if self.camera_started:
+            self.picam2.stop()
+            self.camera_started = False
         cv2.destroyAllWindows()
-        self.picam2.stop()
+
+    def stop(self):
+        self.stop_camera_and_windows()
+        # Close any open GUI windows and quit Tkinter
+        if self.current_gui:
+            self.current_gui.destroy()
+            self.current_gui = None
+        if self.root:
+            self.root.destroy()
+            self.root = None
 
 
     def get_person_info(self, criminal_id):
@@ -109,4 +176,32 @@ class FacialRecognitionModule:
             }
         return None
 
+    def show_match_gui(self, person_info):
+        if self.root is None:
+            self.root = tk.Tk()
+            self.root.withdraw()
 
+        win = tk.Toplevel(self.root)
+        win.title("Matched Person Info")
+        win.geometry("400x400")
+
+        self.current_gui = win
+
+        info = f"""
+        ID: {person_info['id']}
+        Criminal ID: {person_info['criminal_id']}
+        Name: {person_info['name']}
+        Age: {person_info['age']}
+        Description: {person_info['description']}
+        Offence: {person_info['offence']}
+        Status: {person_info['status']}
+        """
+
+        label = tk.Label(win, text=info.strip(), justify='left', font=('Arial', 12))
+        label.pack(padx=20, pady=20)
+
+        tk.Button(win, text="Close", command=win.destroy).pack(pady=10)
+
+        win.update_idletasks()
+        win.lift()
+        win.focus_force()
